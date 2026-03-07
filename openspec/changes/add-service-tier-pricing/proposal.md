@@ -7,9 +7,11 @@
 - add `gpt-5.4` pricing support, including the documented long-context standard tier rates
 - make fast-mode pricing depend on `service_tier` so priority requests are costed above standard requests
 - persist `service_tier` in request logs so historical cost summaries and trends remain correct
+- expose `service_tier` in request-log API responses so fast-mode requests are visible in the dashboard
 
 ## Impact
 
 - Code: `app/core/usage/pricing.py`, `app/core/usage/logs.py`, `app/modules/api_keys/service.py`, `app/modules/proxy/service.py`, `app/modules/request_logs/repository.py`, `app/modules/usage/builders.py`
+- Code: `app/modules/request_logs/schemas.py`, `app/modules/request_logs/mappers.py`, `frontend/src/features/dashboard/*`, `frontend/src/utils/formatters.ts`
 - DB: `request_logs.service_tier`
 - Tests: pricing, dashboard trends, API key service, request log cost reporting

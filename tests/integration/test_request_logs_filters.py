@@ -427,5 +427,6 @@ async def test_request_logs_cost_uses_priority_service_tier(async_client, db_set
     payload = response.json()["requests"]
     assert len(payload) == 1
     entry = payload[0]
+    assert entry["serviceTier"] == "priority"
     expected = round(_cost(1_000_000, 1_000_000, input_rate=5.0, cached_rate=0.5, output_rate=30.0), 6)
     assert entry["costUsd"] == pytest.approx(expected)
