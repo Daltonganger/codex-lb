@@ -79,6 +79,8 @@ class UsageUpdater:
         self._additional_usage_repo = additional_usage_repo
         self._encryptor = TokenEncryptor()
         self._auth_manager = AuthManager(accounts_repo) if accounts_repo else None
+        # In-memory freshness for additional-only accounts (no main UsageHistory entry).
+        self._additional_fresh: dict[str, datetime] = {}
 
     async def refresh_accounts(
         self,
@@ -98,6 +100,10 @@ class UsageUpdater:
                 continue
             latest = latest_usage.get(account.id)
             if latest and (now - latest.recorded_at).total_seconds() < interval:
+                continue
+            # Additional-only accounts have no main usage entry; check in-memory freshness.
+            additional_fresh_at = self._additional_fresh.get(account.id)
+            if additional_fresh_at and (now - additional_fresh_at).total_seconds() < interval:
                 continue
             # NOTE: AsyncSession is not safe for concurrent use. Run sequentially
             # within the request-scoped session to avoid PK collisions and
@@ -208,7 +214,12 @@ class UsageUpdater:
 
         rate_limit = payload.rate_limit
         if rate_limit is None:
-            return AccountRefreshResult(usage_written=False)
+            # Additional-only accounts still wrote data above; mark fresh to
+            # prevent the scheduler/load-balancer from re-polling immediately.
+            additional_written = self._additional_usage_repo is not None and bool(payload.additional_rate_limits)
+            if additional_written:
+                self._additional_fresh[account.id] = utcnow()
+            return AccountRefreshResult(usage_written=additional_written)
 
         primary = rate_limit.primary_window
         secondary = rate_limit.secondary_window

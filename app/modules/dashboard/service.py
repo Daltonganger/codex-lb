@@ -91,8 +91,10 @@ class DashboardService:
         # Fetch additional usage data
         additional_quotas = await self._build_additional_quotas()
 
-        # Compute depletion from primary usage history
-        history_since = now - timedelta(hours=1)
+        # Compute depletion from primary usage history.
+        # Use the actual window duration so we don't undercount for 5-hour windows.
+        depletion_lookback_minutes = primary_window_minutes if primary_window_minutes else 60
+        history_since = now - timedelta(minutes=depletion_lookback_minutes)
         primary_history: dict[str, list[UsageHistory]] = {}
         for account_id in primary_usage:
             rows = await self._repo.usage_history_since(account_id, "primary", history_since)

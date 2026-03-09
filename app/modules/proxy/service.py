@@ -822,18 +822,22 @@ class ProxyService:
                 if used_percents:
                     avg_used_percent = sum(used_percents) / len(used_percents)
                     window_minutes_values = [e.window_minutes for e in filtered_entries.values() if e.window_minutes]
-                    window_minutes = max(window_minutes_values) if window_minutes_values else 300
-                    limit_window_seconds = int(window_minutes * 60)
                     reset_at_values = [e.reset_at for e in filtered_entries.values() if e.reset_at]
-                    reset_at = max(reset_at_values) if reset_at_values else 0
-                    reset_after_seconds = max(0, int(reset_at) - now_epoch)
 
-                    window_snapshot = RateLimitWindowSnapshotData(
-                        used_percent=int(max(0.0, min(100.0, avg_used_percent))),
-                        limit_window_seconds=limit_window_seconds,
-                        reset_after_seconds=reset_after_seconds,
-                        reset_at=int(reset_at),
-                    )
+                    # Only build a snapshot when we have actual reset metadata;
+                    # fabricating reset_at=0 / window=300 breaks client countdowns.
+                    if window_minutes_values or reset_at_values:
+                        window_minutes = max(window_minutes_values) if window_minutes_values else 300
+                        limit_window_seconds = int(window_minutes * 60)
+                        reset_at = int(max(reset_at_values)) if reset_at_values else 0
+                        reset_after_seconds = max(0, reset_at - now_epoch)
+
+                        window_snapshot = RateLimitWindowSnapshotData(
+                            used_percent=int(max(0.0, min(100.0, avg_used_percent))),
+                            limit_window_seconds=limit_window_seconds,
+                            reset_after_seconds=reset_after_seconds,
+                            reset_at=reset_at,
+                        )
 
             secondary_window_snapshot = None
             if filtered_secondary:
@@ -841,17 +845,19 @@ class ProxyService:
                 if sec_used_percents:
                     sec_avg = sum(sec_used_percents) / len(sec_used_percents)
                     sec_window_values = [e.window_minutes for e in filtered_secondary.values() if e.window_minutes]
-                    sec_window_minutes = max(sec_window_values) if sec_window_values else 300
-                    sec_limit_window_seconds = int(sec_window_minutes * 60)
                     sec_reset_values = [e.reset_at for e in filtered_secondary.values() if e.reset_at]
-                    sec_reset_at = max(sec_reset_values) if sec_reset_values else 0
-                    sec_reset_after_seconds = max(0, int(sec_reset_at) - now_epoch)
-                    secondary_window_snapshot = RateLimitWindowSnapshotData(
-                        used_percent=int(max(0.0, min(100.0, sec_avg))),
-                        limit_window_seconds=sec_limit_window_seconds,
-                        reset_after_seconds=sec_reset_after_seconds,
-                        reset_at=int(sec_reset_at),
-                    )
+
+                    if sec_window_values or sec_reset_values:
+                        sec_window_minutes = max(sec_window_values) if sec_window_values else 300
+                        sec_limit_window_seconds = int(sec_window_minutes * 60)
+                        sec_reset_at = int(max(sec_reset_values)) if sec_reset_values else 0
+                        sec_reset_after_seconds = max(0, sec_reset_at - now_epoch)
+                        secondary_window_snapshot = RateLimitWindowSnapshotData(
+                            used_percent=int(max(0.0, min(100.0, sec_avg))),
+                            limit_window_seconds=sec_limit_window_seconds,
+                            reset_after_seconds=sec_reset_after_seconds,
+                            reset_at=sec_reset_at,
+                        )
 
             rate_limit_details = None
             if avg_used_percent is not None or secondary_window_snapshot is not None:

@@ -752,10 +752,59 @@ async def test_additional_rate_limits_sync_even_when_main_rate_limit_missing(mon
 
     refreshed = await updater.refresh_accounts([acc], latest_usage={})
 
-    assert refreshed is False
+    # Additional-only accounts write additional data and mark themselves as fresh
+    # to prevent tight re-polling (R6-F1).
+    assert refreshed is True
     assert usage_repo.entries == []
     assert len(additional_repo.entries) == 1
     assert additional_repo.entries[0].limit_name == "o-pro"
+
+
+@pytest.mark.asyncio
+async def test_additional_only_account_not_repolled_within_interval(monkeypatch) -> None:
+    """R6-F1: Additional-only accounts must not cause tight re-polling."""
+    monkeypatch.setenv("CODEX_LB_USAGE_REFRESH_ENABLED", "true")
+    from app.core.config.settings import get_settings
+
+    get_settings.cache_clear()
+
+    call_count = 0
+
+    async def stub_fetch_usage(**_: Any) -> UsagePayload:
+        nonlocal call_count
+        call_count += 1
+        return UsagePayload.model_validate(
+            {
+                "additional_rate_limits": [
+                    {
+                        "limit_name": "o-pro",
+                        "metered_feature": "o_pro",
+                        "rate_limit": {
+                            "primary_window": {
+                                "used_percent": 25.0,
+                                "reset_at": 1735689600,
+                                "limit_window_seconds": 60,
+                            }
+                        },
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("app.modules.usage.updater.fetch_usage", stub_fetch_usage)
+
+    usage_repo = StubUsageRepository()
+    additional_repo = StubAdditionalUsageRepository()
+    updater = UsageUpdater(usage_repo, accounts_repo=None, additional_usage_repo=additional_repo)
+    acc = _make_account("acc_add_only2", "workspace_add_only2", email="add-only2@example.com")
+
+    # First call — fetches usage
+    await updater.refresh_accounts([acc], latest_usage={})
+    assert call_count == 1
+
+    # Second call immediately — should be skipped due to freshness cache
+    await updater.refresh_accounts([acc], latest_usage={})
+    assert call_count == 1  # not re-polled
 
 
 @pytest.mark.asyncio
