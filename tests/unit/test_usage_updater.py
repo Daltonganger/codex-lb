@@ -100,6 +100,7 @@ class StubAdditionalUsageRepository:
     def __init__(self) -> None:
         self.entries: list[AdditionalUsageEntry] = []
         self.deleted_account_ids: list[str] = []
+        self.deleted_account_limit_pairs: list[tuple[str, str]] = []
 
     async def add_entry(
         self,
@@ -125,6 +126,14 @@ class StubAdditionalUsageRepository:
 
     async def delete_for_account(self, account_id: str) -> None:
         self.deleted_account_ids.append(account_id)
+
+    async def delete_for_account_and_limit(self, account_id: str, limit_name: str) -> None:
+        self.deleted_account_limit_pairs.append((account_id, limit_name))
+
+    async def list_limit_names(self, *, account_ids: list[str] | None = None) -> list[str]:
+        if account_ids is None:
+            return sorted({entry.limit_name for entry in self.entries})
+        return sorted({entry.limit_name for entry in self.entries if entry.account_id in account_ids})
 
 
 def _make_account(account_id: str, chatgpt_account_id: str, email: str = "a@example.com") -> Account:
@@ -887,6 +896,140 @@ async def test_additional_rate_limits_secondary_none_only_primary(monkeypatch) -
     assert entry.limit_name == "sora"
     assert entry.metered_feature == "sora_video"
     assert entry.used_percent == 60.0
+
+
+@pytest.mark.asyncio
+async def test_additional_rate_limits_prune_stale_limit_names(monkeypatch) -> None:
+    monkeypatch.setenv("CODEX_LB_USAGE_REFRESH_ENABLED", "true")
+    from app.core.config.settings import get_settings
+
+    get_settings.cache_clear()
+
+    async def stub_fetch_usage(**_: Any) -> UsagePayload:
+        return UsagePayload.model_validate(
+            {
+                "rate_limit": {
+                    "primary_window": {
+                        "used_percent": 10.0,
+                        "reset_at": 1735689600,
+                        "limit_window_seconds": 60,
+                    },
+                },
+                "additional_rate_limits": [
+                    {
+                        "limit_name": "o-pro",
+                        "metered_feature": "o_pro",
+                        "rate_limit": {
+                            "primary_window": {
+                                "used_percent": 25.0,
+                                "reset_at": 5555,
+                                "limit_window_seconds": 60,
+                            },
+                        },
+                    }
+                ],
+            }
+        )
+
+    monkeypatch.setattr("app.modules.usage.updater.fetch_usage", stub_fetch_usage)
+
+    usage_repo = StubUsageRepository()
+    additional_repo = StubAdditionalUsageRepository()
+    additional_repo.entries.extend(
+        [
+            AdditionalUsageEntry(
+                account_id="acc_prune",
+                limit_name="o-pro",
+                metered_feature="o_pro",
+                window="primary",
+                used_percent=10.0,
+                reset_at=1111,
+                window_minutes=1,
+            ),
+            AdditionalUsageEntry(
+                account_id="acc_prune",
+                limit_name="legacy-limit",
+                metered_feature="legacy_feature",
+                window="primary",
+                used_percent=90.0,
+                reset_at=2222,
+                window_minutes=5,
+            ),
+        ]
+    )
+    updater = UsageUpdater(usage_repo, accounts_repo=None, additional_usage_repo=additional_repo)
+    acc = _make_account("acc_prune", "workspace_prune", email="prune@example.com")
+
+    await updater.refresh_accounts([acc], latest_usage={})
+
+    assert additional_repo.deleted_account_limit_pairs == [("acc_prune", "legacy-limit")]
+
+
+@pytest.mark.asyncio
+async def test_additional_rate_limits_prune_stale_secondary_window(monkeypatch) -> None:
+    monkeypatch.setenv("CODEX_LB_USAGE_REFRESH_ENABLED", "true")
+    from app.core.config.settings import get_settings
+
+    get_settings.cache_clear()
+
+    async def stub_fetch_usage(**_: Any) -> UsagePayload:
+        return UsagePayload.model_validate(
+            {
+                "rate_limit": {
+                    "primary_window": {
+                        "used_percent": 10.0,
+                        "reset_at": 1735689600,
+                        "limit_window_seconds": 60,
+                    },
+                },
+                "additional_rate_limits": [
+                    {
+                        "limit_name": "o-pro",
+                        "metered_feature": "o_pro",
+                        "rate_limit": {
+                            "primary_window": {
+                                "used_percent": 25.0,
+                                "reset_at": 5555,
+                                "limit_window_seconds": 60,
+                            },
+                        },
+                    }
+                ],
+            }
+        )
+
+    monkeypatch.setattr("app.modules.usage.updater.fetch_usage", stub_fetch_usage)
+
+    usage_repo = StubUsageRepository()
+    additional_repo = StubAdditionalUsageRepository()
+    additional_repo.entries.extend(
+        [
+            AdditionalUsageEntry(
+                account_id="acc_secondary_prune",
+                limit_name="o-pro",
+                metered_feature="o_pro",
+                window="primary",
+                used_percent=10.0,
+                reset_at=1111,
+                window_minutes=1,
+            ),
+            AdditionalUsageEntry(
+                account_id="acc_secondary_prune",
+                limit_name="o-pro-secondary-only",
+                metered_feature="o_pro",
+                window="secondary",
+                used_percent=80.0,
+                reset_at=2222,
+                window_minutes=60,
+            ),
+        ]
+    )
+    updater = UsageUpdater(usage_repo, accounts_repo=None, additional_usage_repo=additional_repo)
+    acc = _make_account("acc_secondary_prune", "workspace_secondary_prune", email="secondary-prune@example.com")
+
+    await updater.refresh_accounts([acc], latest_usage={})
+
+    assert additional_repo.deleted_account_limit_pairs == [("acc_secondary_prune", "o-pro-secondary-only")]
 
 
 @pytest.mark.asyncio

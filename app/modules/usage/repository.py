@@ -207,6 +207,14 @@ class AdditionalUsageRepository:
         await self._session.execute(stmt)
         await self._session.commit()
 
+    async def delete_for_account_and_limit(self, account_id: str, limit_name: str) -> None:
+        stmt = delete(AdditionalUsageHistory).where(
+            AdditionalUsageHistory.account_id == account_id,
+            AdditionalUsageHistory.limit_name == limit_name,
+        )
+        await self._session.execute(stmt)
+        await self._session.commit()
+
     async def latest_by_account(
         self,
         limit_name: str,

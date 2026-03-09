@@ -498,3 +498,59 @@ async def test_delete_for_account_removes_all_rows(async_session: AsyncSession) 
     entries = result.scalars().all()
     assert len(entries) == 1
     assert entries[0].account_id == "acc_keep"
+
+
+@pytest.mark.asyncio
+async def test_delete_for_account_and_limit_removes_only_matching_rows(async_session: AsyncSession) -> None:
+    repo = AdditionalUsageRepository(async_session)
+    now = datetime.now(tz=timezone.utc)
+
+    await repo.add_entry(
+        account_id="acc_delete",
+        limit_name="requests_per_minute",
+        metered_feature="api_calls",
+        window="1m",
+        used_percent=30.0,
+        recorded_at=now,
+    )
+    await repo.add_entry(
+        account_id="acc_delete",
+        limit_name="requests_per_minute",
+        metered_feature="api_calls",
+        window="5m",
+        used_percent=35.0,
+        recorded_at=now,
+    )
+    await repo.add_entry(
+        account_id="acc_delete",
+        limit_name="requests_per_hour",
+        metered_feature="api_calls",
+        window="1h",
+        used_percent=60.0,
+        recorded_at=now,
+    )
+    await repo.add_entry(
+        account_id="acc_keep",
+        limit_name="requests_per_minute",
+        metered_feature="api_calls",
+        window="1m",
+        used_percent=45.0,
+        recorded_at=now,
+    )
+
+    await repo.delete_for_account_and_limit("acc_delete", "requests_per_minute")
+
+    result = await async_session.execute(
+        select(AdditionalUsageHistory).order_by(
+            AdditionalUsageHistory.account_id,
+            AdditionalUsageHistory.limit_name,
+            AdditionalUsageHistory.window,
+        )
+    )
+    entries = result.scalars().all()
+
+    assert len(entries) == 2
+    assert [(entry.account_id, entry.limit_name, entry.window) for entry in entries] == [
+        ("acc_delete", "requests_per_hour", "1h"),
+        ("acc_keep", "requests_per_minute", "1m"),
+    ]

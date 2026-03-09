@@ -821,10 +821,11 @@ class ProxyService:
                 ]
                 if used_percents:
                     avg_used_percent = sum(used_percents) / len(used_percents)
-                    primary_entry = next(iter(filtered_entries.values()))
-                    window_minutes = primary_entry.window_minutes or 300
+                    window_minutes_values = [e.window_minutes for e in filtered_entries.values() if e.window_minutes]
+                    window_minutes = max(window_minutes_values) if window_minutes_values else 300
                     limit_window_seconds = int(window_minutes * 60)
-                    reset_at = primary_entry.reset_at or 0
+                    reset_at_values = [e.reset_at for e in filtered_entries.values() if e.reset_at]
+                    reset_at = max(reset_at_values) if reset_at_values else 0
                     reset_after_seconds = max(0, int(reset_at) - now_epoch)
 
                     window_snapshot = RateLimitWindowSnapshotData(
@@ -839,10 +840,11 @@ class ProxyService:
                 sec_used_percents = [e.used_percent for e in filtered_secondary.values() if e.used_percent is not None]
                 if sec_used_percents:
                     sec_avg = sum(sec_used_percents) / len(sec_used_percents)
-                    sec_first = next(iter(filtered_secondary.values()))
-                    sec_window_minutes = sec_first.window_minutes or 300
+                    sec_window_values = [e.window_minutes for e in filtered_secondary.values() if e.window_minutes]
+                    sec_window_minutes = max(sec_window_values) if sec_window_values else 300
                     sec_limit_window_seconds = int(sec_window_minutes * 60)
-                    sec_reset_at = sec_first.reset_at or 0
+                    sec_reset_values = [e.reset_at for e in filtered_secondary.values() if e.reset_at]
+                    sec_reset_at = max(sec_reset_values) if sec_reset_values else 0
                     sec_reset_after_seconds = max(0, int(sec_reset_at) - now_epoch)
                     secondary_window_snapshot = RateLimitWindowSnapshotData(
                         used_percent=int(max(0.0, min(100.0, sec_avg))),

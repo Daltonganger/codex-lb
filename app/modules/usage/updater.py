@@ -51,6 +51,10 @@ class AdditionalUsageRepositoryPort(Protocol):
 
     async def delete_for_account(self, account_id: str) -> None: ...
 
+    async def delete_for_account_and_limit(self, account_id: str, limit_name: str) -> None: ...
+
+    async def list_limit_names(self, *, account_ids: list[str] | None = None) -> list[str]: ...
+
 
 @dataclass(frozen=True, slots=True)
 class AccountRefreshResult:
@@ -187,9 +191,11 @@ class UsageUpdater:
 
         if self._additional_usage_repo is not None:
             if payload.additional_rate_limits:
+                current_limit_names: set[str] = set()
                 for additional in payload.additional_rate_limits:
                     if additional.rate_limit is None:
                         continue
+                    current_limit_names.add(additional.limit_name)
                     add_primary = additional.rate_limit.primary_window
                     add_secondary = additional.rate_limit.secondary_window
                     if add_primary and add_primary.used_percent is not None:
@@ -212,6 +218,10 @@ class UsageUpdater:
                             reset_at=_reset_at(add_secondary.reset_at, add_secondary.reset_after_seconds, now_epoch),
                             window_minutes=_window_minutes(add_secondary.limit_window_seconds),
                         )
+                existing_names = await self._additional_usage_repo.list_limit_names(account_ids=[account.id])
+                for stale_name in existing_names:
+                    if stale_name not in current_limit_names:
+                        await self._additional_usage_repo.delete_for_account_and_limit(account.id, stale_name)
             elif payload.additional_rate_limits is not None:
                 await self._additional_usage_repo.delete_for_account(account.id)
 
