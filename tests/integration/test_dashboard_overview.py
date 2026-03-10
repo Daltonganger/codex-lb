@@ -5,7 +5,7 @@ from datetime import timedelta
 import pytest
 
 from app.core.crypto import TokenEncryptor
-from app.core.utils.time import utcnow
+from app.core.utils.time import naive_utc_to_epoch, utcnow
 from app.db.models import Account, AccountStatus
 from app.db.session import SessionLocal
 from app.modules.accounts.repository import AccountsRepository
@@ -151,7 +151,7 @@ async def test_dashboard_overview_computes_depletion_from_recent_db_history(asyn
             10.0,
             window="primary",
             window_minutes=60,
-            reset_at=int((now + timedelta(minutes=45)).timestamp()),
+            reset_at=int(naive_utc_to_epoch(now + timedelta(minutes=45))),
             recorded_at=now - timedelta(minutes=20),
         )
         await usage_repo.add_entry(
@@ -159,7 +159,7 @@ async def test_dashboard_overview_computes_depletion_from_recent_db_history(asyn
             35.0,
             window="primary",
             window_minutes=60,
-            reset_at=int((now + timedelta(minutes=45)).timestamp()),
+            reset_at=int(naive_utc_to_epoch(now + timedelta(minutes=45))),
             recorded_at=now - timedelta(minutes=5),
         )
 

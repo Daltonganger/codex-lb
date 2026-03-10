@@ -106,6 +106,11 @@ def compute_depletion_for_account(
     seconds_until_reset = 0.0
     if latest.reset_at is not None:
         seconds_until_reset = max(0.0, latest.reset_at - naive_utc_to_epoch(now))
+        if seconds_until_reset == 0.0:
+            # Window has already reset — the stale used_percent is
+            # meaningless.  Clear EWMA state so next refresh starts fresh.
+            _ewma_states.pop(key, None)
+            return None
     elif latest.window_minutes is not None:
         # Without reset_at we cannot know when the window started.  Use
         # the full window duration as a conservative upper bound rather

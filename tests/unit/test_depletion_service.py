@@ -247,3 +247,18 @@ def test_new_entries_still_update_ewma_state() -> None:
     assert result2 is not None
     # Rate should be higher now (usage accelerated from 5%/min to 10%/min)
     assert result2.rate_per_second > result1.rate_per_second
+
+
+def test_post_reset_window_returns_none() -> None:
+    """R30-F1: When reset_at is in the past, depletion should be None (window expired)."""
+    reset_ewma_state()
+    reset_epoch = int((BASE_TIME + timedelta(minutes=5)).timestamp())
+    history = [
+        _entry(10.0, BASE_TIME, reset_at=reset_epoch, window_minutes=300),
+        _entry(50.0, BASE_TIME + timedelta(minutes=1), reset_at=reset_epoch, window_minutes=300),
+        _entry(80.0, BASE_TIME + timedelta(minutes=2), reset_at=reset_epoch, window_minutes=300),
+    ]
+    # 'now' is after the reset — the window has already expired
+    now = BASE_TIME + timedelta(minutes=10)
+    result = compute_depletion_for_account("acc1", "codex_other", "primary", history, now=now)
+    assert result is None
