@@ -1,7 +1,7 @@
 """add additional_usage_history table
 
 Revision ID: 20260309_000000_add_additional_usage_history
-Revises: 20260308_000000_add_sqlite_performance_indexes
+Revises: 20260309_000000_request_logs_nullable_account_id
 Create Date: 2026-03-09
 """
 
@@ -13,7 +13,7 @@ from sqlalchemy.engine import Connection
 
 # revision identifiers, used by Alembic.
 revision = "20260309_000000_add_additional_usage_history"
-down_revision = "20260308_000000_add_sqlite_performance_indexes"
+down_revision = "20260309_000000_request_logs_nullable_account_id"
 branch_labels = None
 depends_on = None
 
