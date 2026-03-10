@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -58,7 +59,6 @@ def compute_depletion_for_account(
 
     now = now or utcnow()
     key = (account_id, limit_name, window)
-    state = _ewma_states.get(key)
 
     if len(history) < 2:
         # Only one in-window sample — seed the EWMA but don't compute
@@ -70,29 +70,7 @@ def compute_depletion_for_account(
         )
         return None
 
-    if state is not None:
-        cutoff = state.last_timestamp
-        new_entries = [e for e in history if naive_utc_to_epoch(e.recorded_at) > cutoff]
-        if not new_entries:
-            if len(history) < 2:
-                # Previous samples aged out leaving only one point.  Clear
-                # stale EWMA so we don't report depletion from old data.
-                entry = history[0]
-                _ewma_states[key] = ewma_update(
-                    None, entry.used_percent, naive_utc_to_epoch(entry.recorded_at), reset_at=entry.reset_at
-                )
-                return None
-            # Older spike samples rolled out of the window but 2+ newer
-            # points remain.  Recompute EWMA from scratch over the
-            # surviving in-window history so the cached rate stays current.
-            state = None
-            new_entries = history
-    else:
-        new_entries = history
-
-    for entry in new_entries:
-        ts = naive_utc_to_epoch(entry.recorded_at)
-        state = ewma_update(state, entry.used_percent, ts, reset_at=entry.reset_at)
+    state = _rebuild_ewma_state(history)
 
     if state is not None:
         _ewma_states[key] = state
@@ -148,7 +126,7 @@ def compute_depletion_for_account(
 
 
 def compute_aggregate_depletion(
-    per_account_metrics: list[DepletionMetrics | None],
+    per_account_metrics: Sequence[DepletionMetrics | None],
 ) -> AggregateDepletionMetrics | None:
     """
     Aggregate depletion metrics across accounts using max(risk).
@@ -175,3 +153,11 @@ def compute_aggregate_depletion(
 def reset_ewma_state() -> None:
     """Clear all in-memory EWMA state. Used for testing."""
     _ewma_states.clear()
+
+
+def _rebuild_ewma_state(history: list) -> EWMAState | None:
+    state: EWMAState | None = None
+    for entry in history:
+        ts = naive_utc_to_epoch(entry.recorded_at)
+        state = ewma_update(state, entry.used_percent, ts, reset_at=entry.reset_at)
+    return state

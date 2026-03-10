@@ -249,6 +249,35 @@ def test_new_entries_still_update_ewma_state() -> None:
     assert result2.rate_per_second > result1.rate_per_second
 
 
+def test_aged_out_samples_do_not_keep_stale_ewma_influence() -> None:
+    reset_ewma_state()
+    full_window_history = [
+        _entry(10.0, BASE_TIME),
+        _entry(70.0, BASE_TIME + timedelta(minutes=1)),
+        _entry(80.0, BASE_TIME + timedelta(minutes=2)),
+    ]
+    full_window_result = compute_depletion_for_account(
+        "acc1",
+        "codex_other",
+        "primary",
+        full_window_history,
+        now=BASE_TIME + timedelta(minutes=3),
+    )
+    assert full_window_result is not None
+
+    in_window_history = full_window_history[1:]
+    in_window_result = compute_depletion_for_account(
+        "acc1",
+        "codex_other",
+        "primary",
+        in_window_history,
+        now=BASE_TIME + timedelta(minutes=3),
+    )
+    assert in_window_result is not None
+    assert in_window_result.rate_per_second == pytest.approx(10.0 / 60.0)
+    assert in_window_result.rate_per_second < full_window_result.rate_per_second
+
+
 def test_post_reset_window_returns_none() -> None:
     """R30-F1: When reset_at is in the past, depletion should be None (window expired)."""
     reset_ewma_state()

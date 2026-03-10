@@ -170,3 +170,56 @@ async def test_dashboard_overview_computes_depletion_from_recent_db_history(asyn
     assert payload["depletion"] is not None
     assert 0.0 <= payload["depletion"]["risk"] <= 1.0
     assert payload["depletion"]["riskLevel"] in {"safe", "warning", "danger", "critical"}
+
+
+@pytest.mark.asyncio
+async def test_dashboard_overview_weekly_only_depletion_uses_current_stream(async_client, db_setup):
+    now = utcnow().replace(microsecond=0)
+    reset_at = int(naive_utc_to_epoch(now + timedelta(minutes=30)))
+
+    async with SessionLocal() as session:
+        accounts_repo = AccountsRepository(session)
+        usage_repo = UsageRepository(session)
+
+        await accounts_repo.upsert(_make_account("acc_weekly_depletion", "weekly@example.com", plan_type="free"))
+
+        await usage_repo.add_entry(
+            "acc_weekly_depletion",
+            0.0,
+            window="secondary",
+            window_minutes=10080,
+            reset_at=reset_at,
+            recorded_at=now - timedelta(days=6, minutes=2),
+        )
+        await usage_repo.add_entry(
+            "acc_weekly_depletion",
+            5.0,
+            window="secondary",
+            window_minutes=10080,
+            reset_at=reset_at,
+            recorded_at=now - timedelta(days=6, minutes=1),
+        )
+        await usage_repo.add_entry(
+            "acc_weekly_depletion",
+            6.0,
+            window="primary",
+            window_minutes=10080,
+            reset_at=reset_at,
+            recorded_at=now - timedelta(minutes=2),
+        )
+        await usage_repo.add_entry(
+            "acc_weekly_depletion",
+            7.0,
+            window="primary",
+            window_minutes=10080,
+            reset_at=reset_at,
+            recorded_at=now - timedelta(minutes=1),
+        )
+
+    response = await async_client.get("/api/dashboard/overview")
+    assert response.status_code == 200
+
+    payload = response.json()
+    assert payload["depletion"] is not None
+    assert payload["depletion"]["window"] == "secondary"
+    assert payload["depletion"]["risk"] == pytest.approx(0.37, abs=0.02)

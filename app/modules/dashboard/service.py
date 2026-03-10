@@ -108,6 +108,7 @@ class DashboardService:
         pri_cutoffs: dict[str, datetime] = {}
         sec_cutoffs: dict[str, datetime] = {}
         weekly_only_ids: set[str] = set()
+        weekly_only_history_sources: dict[str, str] = {}
 
         for account_id in all_account_ids:
             if account_id in normalized_primary_ids:
@@ -127,19 +128,24 @@ class DashboardService:
                     if s_since < sec_since:
                         sec_since = s_since
             elif account_id in primary_usage:
-                # Weekly-only: needs both primary and secondary rows
                 weekly_only_ids.add(account_id)
+                primary_entry = primary_usage[account_id]
                 sec_entry = secondary_usage.get(account_id)
-                acct_window = sec_entry.window_minutes if sec_entry and sec_entry.window_minutes else 10080
+                use_primary_stream = _should_use_weekly_primary_history(primary_entry, sec_entry)
+                weekly_only_history_sources[account_id] = "primary" if use_primary_stream else "secondary"
+                current_entry = primary_entry if use_primary_stream else sec_entry
+                acct_window = current_entry.window_minutes if current_entry and current_entry.window_minutes else 10080
                 acct_since = now - timedelta(minutes=acct_window)
-                pri_fetch_ids.append(account_id)
-                sec_fetch_ids.append(account_id)
-                pri_cutoffs[account_id] = acct_since
-                sec_cutoffs[account_id] = acct_since
-                if acct_since < pri_since:
-                    pri_since = acct_since
-                if acct_since < sec_since:
-                    sec_since = acct_since
+                if use_primary_stream:
+                    pri_fetch_ids.append(account_id)
+                    pri_cutoffs[account_id] = acct_since
+                    if acct_since < pri_since:
+                        pri_since = acct_since
+                else:
+                    sec_fetch_ids.append(account_id)
+                    sec_cutoffs[account_id] = acct_since
+                    if acct_since < sec_since:
+                        sec_since = acct_since
             else:
                 sec_entry = secondary_usage[account_id]
                 acct_window = sec_entry.window_minutes if sec_entry.window_minutes else 10080
@@ -173,20 +179,15 @@ class DashboardService:
                     if s_rows:
                         secondary_history[account_id] = s_rows
             elif account_id in weekly_only_ids:
-                cutoff = pri_cutoffs[account_id]
-                pri_rows_filtered = [r for r in all_pri_rows.get(account_id, []) if r.recorded_at >= cutoff]
-                sec_rows_filtered = [r for r in all_sec_rows.get(account_id, []) if r.recorded_at >= cutoff]
-                # Deduplicate by (recorded_at, used_percent) to avoid counting
-                # mirrored weekly rows (which have different row ids) twice.
-                seen_keys: set[tuple[datetime, float]] = set()
-                deduped: list[UsageHistory] = []
-                for r in sorted(pri_rows_filtered + sec_rows_filtered, key=lambda r: r.recorded_at):
-                    key = (r.recorded_at, r.used_percent)
-                    if key not in seen_keys:
-                        seen_keys.add(key)
-                        deduped.append(r)
-                if deduped:
-                    secondary_history[account_id] = deduped
+                source = weekly_only_history_sources[account_id]
+                if source == "primary":
+                    cutoff = pri_cutoffs[account_id]
+                    rows = [r for r in all_pri_rows.get(account_id, []) if r.recorded_at >= cutoff]
+                else:
+                    cutoff = sec_cutoffs[account_id]
+                    rows = [r for r in all_sec_rows.get(account_id, []) if r.recorded_at >= cutoff]
+                if rows:
+                    secondary_history[account_id] = rows
             else:
                 cutoff = sec_cutoffs[account_id]
                 rows = [r for r in all_sec_rows.get(account_id, []) if r.recorded_at >= cutoff]
@@ -307,6 +308,26 @@ def _rows_from_latest(latest: dict[str, UsageHistory]) -> list[UsageWindowRow]:
         )
         for entry in latest.values()
     ]
+
+
+def _should_use_weekly_primary_history(
+    primary_entry: UsageHistory,
+    secondary_entry: UsageHistory | None,
+) -> bool:
+    return usage_core.should_use_weekly_primary(
+        _usage_history_to_window_row(primary_entry),
+        _usage_history_to_window_row(secondary_entry) if secondary_entry is not None else None,
+    )
+
+
+def _usage_history_to_window_row(entry: UsageHistory) -> UsageWindowRow:
+    return UsageWindowRow(
+        account_id=entry.account_id,
+        used_percent=entry.used_percent,
+        reset_at=entry.reset_at,
+        window_minutes=entry.window_minutes,
+        recorded_at=entry.recorded_at,
+    )
 
 
 def _latest_recorded_at(
