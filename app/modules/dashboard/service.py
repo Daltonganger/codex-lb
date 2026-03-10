@@ -107,6 +107,15 @@ class DashboardService:
                 rows = await self._repo.usage_history_since(account_id, "primary", acct_since)
                 if rows:
                     primary_history[account_id] = rows
+                # Also load secondary history when the account has both windows
+                # so the 7d depletion is not missed.
+                if account_id in secondary_usage:
+                    sec_entry = secondary_usage[account_id]
+                    sec_window = sec_entry.window_minutes if sec_entry.window_minutes else 10080
+                    sec_since = now - timedelta(minutes=sec_window)
+                    sec_rows = await self._repo.usage_history_since(account_id, "secondary", sec_since)
+                    if sec_rows:
+                        secondary_history[account_id] = sec_rows
             elif account_id in primary_usage:
                 # Weekly-only: history is stored under window="primary" even
                 # though normalization remapped the latest row to secondary.
