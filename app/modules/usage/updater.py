@@ -68,6 +68,7 @@ class AdditionalUsageRepositoryPort(Protocol):
 @dataclass(frozen=True, slots=True)
 class AccountRefreshResult:
     usage_written: bool
+    fetch_succeeded: bool = True
 
 
 # Module-level freshness cache for additional-only accounts (no main UsageHistory
@@ -130,10 +131,11 @@ class UsageUpdater:
                     usage_account_id=account.chatgpt_account_id,
                 )
                 refreshed = refreshed or result.usage_written
-                # Always mark as fresh after a successful fetch so
-                # additional-only accounts with empty payloads don't
-                # get re-polled needlessly by this or restarted workers.
-                _last_successful_refresh[account.id] = now
+                # Only cache when the upstream fetch actually succeeded.
+                # Transient errors (401 retry failure, 5xx, etc.) must not
+                # suppress retries within the interval.
+                if result.fetch_succeeded:
+                    _last_successful_refresh[account.id] = now
             except Exception as exc:
                 logger.warning(
                     "Usage refresh failed account_id=%s request_id=%s error=%s",
@@ -162,13 +164,13 @@ class UsageUpdater:
         except UsageFetchError as exc:
             if _should_deactivate_for_usage_error(exc.status_code):
                 await self._deactivate_for_client_error(account, exc)
-                return AccountRefreshResult(usage_written=False)
+                return AccountRefreshResult(usage_written=False, fetch_succeeded=False)
             if exc.status_code != 401 or not self._auth_manager:
-                return AccountRefreshResult(usage_written=False)
+                return AccountRefreshResult(usage_written=False, fetch_succeeded=False)
             try:
                 account = await self._auth_manager.ensure_fresh(account, force=True)
             except RefreshError:
-                return AccountRefreshResult(usage_written=False)
+                return AccountRefreshResult(usage_written=False, fetch_succeeded=False)
             access_token = self._encryptor.decrypt(account.access_token_encrypted)
             try:
                 payload = await fetch_usage(
@@ -178,10 +180,10 @@ class UsageUpdater:
             except UsageFetchError as retry_exc:
                 if _should_deactivate_for_usage_error(retry_exc.status_code):
                     await self._deactivate_for_client_error(account, retry_exc)
-                return AccountRefreshResult(usage_written=False)
+                return AccountRefreshResult(usage_written=False, fetch_succeeded=False)
 
         if payload is None:
-            return AccountRefreshResult(usage_written=False)
+            return AccountRefreshResult(usage_written=False, fetch_succeeded=False)
 
         await self._sync_plan_type(account, payload)
 
