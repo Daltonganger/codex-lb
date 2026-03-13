@@ -295,10 +295,10 @@ jobs:
           enable-cache: true
 
       - name: Install package (runtime deps)
-        run: uv pip install -e .
+        run: uv sync --frozen --no-dev
 
       - name: Import check
-        run: python -c "import app; import app.main; print('import ok')"
+        run: uv run python -c "import app; import app.main; print('import ok')"
 
       - name: Build sdist + wheel
         run: uvx --from build python -m build
