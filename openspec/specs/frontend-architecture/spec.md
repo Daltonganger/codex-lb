@@ -93,6 +93,20 @@ When a request log entry includes `service_tier`, the dashboard request-log API 
 - **THEN** the `GET /api/request-logs` response includes `serviceTier: "priority"`
 - **AND** the dashboard recent-requests table renders the model label with the priority tier visible
 
+### Requirement: Request log transport is visible in the dashboard
+
+The Dashboard recent requests table SHALL display each row's recorded request transport so operators can distinguish websocket and HTTP proxy traffic without leaving the UI. The table SHALL remain renderable for legacy rows whose transport is missing.
+
+#### Scenario: Websocket request row is visible
+
+- **WHEN** `/api/request-logs` returns a request row with `transport = "websocket"`
+- **THEN** the recent requests table shows a visible websocket transport indicator for that row
+
+#### Scenario: Legacy request row without transport still renders
+
+- **WHEN** `/api/request-logs` returns a request row with `transport = null`
+- **THEN** the recent requests table still renders the row and shows a neutral placeholder instead of breaking layout
+
 ### Requirement: Accounts page
 
 The Accounts page SHALL display a two-column layout: left panel with searchable account list, import button, and add account button; right panel with selected account details including usage, token info, and actions (pause/resume/delete/re-authenticate).
@@ -281,3 +295,12 @@ The React dashboard MUST provide a Firewall page that displays current mode (`al
 #### Scenario: User removes IP entry
 - **WHEN** user confirms deletion for an existing firewall entry
 - **THEN** frontend calls `DELETE /api/firewall/ips/{ip}` and refreshes rendered list
+
+### Requirement: Accounts page renders mapped additional quota labels
+The Accounts page MUST render known additional quotas with their mapped user-facing label from canonical quota metadata instead of depending on raw upstream `limitName` strings.
+
+#### Scenario: Codex Spark quota uses mapped label after alias drift
+- **WHEN** an account summary contains an additional quota whose canonical key corresponds to `gpt-5.3-codex-spark`
+- **AND** the raw upstream `limitName` has changed from an earlier alias
+- **THEN** the Accounts page renders the quota label as `GPT-5.3-Codex-Spark`
+

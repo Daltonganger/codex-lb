@@ -97,6 +97,7 @@ class AdditionalUsageHistory(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[str] = mapped_column(String, ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)
+    quota_key: Mapped[str] = mapped_column(String, nullable=False)
     limit_name: Mapped[str] = mapped_column(String, nullable=False)
     metered_feature: Mapped[str] = mapped_column(String, nullable=False)
     window: Mapped[str] = mapped_column(String, nullable=False)
@@ -115,6 +116,7 @@ class RequestLog(Base):
     request_id: Mapped[str] = mapped_column(String, nullable=False)
     requested_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     model: Mapped[str] = mapped_column(String, nullable=False)
+    transport: Mapped[str | None] = mapped_column(String, nullable=True)
     service_tier: Mapped[str | None] = mapped_column(String, nullable=True)
     input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -375,13 +377,13 @@ Index("ix_additional_usage_history_recorded_at", AdditionalUsageHistory.recorded
 Index(
     "ix_additional_usage_history_composite",
     AdditionalUsageHistory.account_id,
-    AdditionalUsageHistory.limit_name,
+    AdditionalUsageHistory.quota_key,
     AdditionalUsageHistory.window,
     AdditionalUsageHistory.recorded_at,
 )
 Index(
-    "ix_additional_usage_limit_window",
-    AdditionalUsageHistory.limit_name,
+    "ix_additional_usage_quota_window",
+    AdditionalUsageHistory.quota_key,
     AdditionalUsageHistory.window,
     AdditionalUsageHistory.account_id,
     AdditionalUsageHistory.recorded_at,

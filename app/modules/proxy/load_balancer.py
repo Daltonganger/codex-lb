@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Iterable
@@ -26,9 +27,10 @@ from app.core.usage.types import UsageWindowRow
 from app.core.utils.time import utcnow
 from app.db.models import Account, AdditionalUsageHistory, StickySessionKind, UsageHistory
 from app.modules.accounts.repository import AccountsRepository
-from app.modules.proxy.additional_model_limits import get_additional_limit_name_for_model
+from app.modules.proxy.additional_model_limits import get_additional_quota_key_for_model_id
 from app.modules.proxy.repo_bundle import ProxyRepoFactory, ProxyRepositories
 from app.modules.proxy.sticky_repository import StickySessionsRepository
+from app.modules.usage.additional_quota_keys import canonicalize_additional_quota_key
 
 logger = logging.getLogger(__name__)
 
@@ -79,11 +81,21 @@ class LoadBalancer:
         routing_strategy: RoutingStrategy = "usage_weighted",
         model: str | None = None,
         additional_limit_name: str | None = None,
+        exclude_account_ids: Collection[str] | None = None,
     ) -> AccountSelection:
         selection_inputs = await self._load_selection_inputs(
             model=model,
             additional_limit_name=additional_limit_name,
         )
+        excluded_ids = set(exclude_account_ids or ())
+        if excluded_ids and selection_inputs.accounts:
+            selection_inputs = _SelectionInputs(
+                accounts=[account for account in selection_inputs.accounts if account.id not in excluded_ids],
+                latest_primary=selection_inputs.latest_primary,
+                latest_secondary=selection_inputs.latest_secondary,
+                error_message=selection_inputs.error_message,
+                error_code=selection_inputs.error_code,
+            )
         if selection_inputs.error_code is not None and not selection_inputs.accounts:
             return AccountSelection(
                 account=None,
@@ -230,23 +242,27 @@ class LoadBalancer:
 
         fresh_since = _additional_usage_fresh_since()
         account_ids = [account.id for account in accounts]
-        latest_primary = await repos.additional_usage.latest_by_account(
+        latest_primary = await _latest_additional_by_key(
+            repos.additional_usage,
             limit_name,
             "primary",
             account_ids=account_ids,
         )
-        latest_secondary = await repos.additional_usage.latest_by_account(
+        latest_secondary = await _latest_additional_by_key(
+            repos.additional_usage,
             limit_name,
             "secondary",
             account_ids=account_ids,
         )
-        fresh_primary = await repos.additional_usage.latest_by_account(
+        fresh_primary = await _latest_additional_by_key(
+            repos.additional_usage,
             limit_name,
             "primary",
             account_ids=account_ids,
             since=fresh_since,
         )
-        fresh_secondary = await repos.additional_usage.latest_by_account(
+        fresh_secondary = await _latest_additional_by_key(
+            repos.additional_usage,
             limit_name,
             "secondary",
             account_ids=account_ids,
@@ -537,7 +553,7 @@ def _filter_accounts_for_model(accounts: list[Account], model: str) -> list[Acco
 
 
 def _gated_limit_name_for_model(model: str | None) -> str | None:
-    return get_additional_limit_name_for_model(model)
+    return get_additional_quota_key_for_model_id(model)
 
 
 def _mapped_model_has_registry_entry(model: str | None) -> bool:
@@ -571,6 +587,35 @@ def _clone_account(account: Account) -> Account:
 def _clone_usage_history(entry: UsageHistory) -> UsageHistory:
     data = {column.name: getattr(entry, column.name) for column in UsageHistory.__table__.columns}
     return UsageHistory(**data)
+
+
+async def _latest_additional_by_key(
+    additional_usage_repo,
+    quota_key: str,
+    window: str,
+    *,
+    account_ids: list[str] | None = None,
+    since: datetime | None = None,
+) -> dict[str, AdditionalUsageHistory]:
+    resolved_quota_key = canonicalize_additional_quota_key(
+        quota_key=quota_key,
+        limit_name=quota_key,
+    )
+    if resolved_quota_key is None:
+        return {}
+    if hasattr(additional_usage_repo, "latest_by_quota_key"):
+        return await additional_usage_repo.latest_by_quota_key(
+            resolved_quota_key,
+            window,
+            account_ids=account_ids,
+            since=since,
+        )
+    return await additional_usage_repo.latest_by_account(
+        resolved_quota_key,
+        window,
+        account_ids=account_ids,
+        since=since,
+    )
 
 
 def _additional_usage_fresh_since(now: datetime | None = None) -> datetime:
