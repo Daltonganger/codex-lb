@@ -255,9 +255,7 @@ def _build_upstream_websocket_headers(
         if key.lower() != "connection":
             continue
         connected_header_tokens.update(
-            token.strip().lower()
-            for token in value.split(",")
-            if isinstance(value, str) and token.strip()
+            token.strip().lower() for token in value.split(",") if isinstance(value, str) and token.strip()
         )
     blocked_header_names = _HOP_BY_HOP_HEADER_NAMES | connected_header_tokens
     headers = {key: value for key, value in inbound.items() if key.lower() not in blocked_header_names}
