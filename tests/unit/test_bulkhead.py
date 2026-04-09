@@ -8,6 +8,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+import app.core.resilience.bulkhead as bulkhead_module
 from app.core.resilience.bulkhead import BulkheadMiddleware, BulkheadSemaphore
 
 pytestmark = pytest.mark.unit
@@ -244,6 +245,14 @@ async def test_bulkhead_dashboard_websocket_uses_detail_payload_when_lane_full()
     assert app_called is False
     payload = json.loads(cast(bytes, sent_events[1]["body"]).decode("utf-8"))
     assert payload == {"detail": "codex-lb is temporarily overloaded in the dashboard lane"}
+
+
+def test_get_bulkhead_derives_compact_limit_from_http_limit(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(bulkhead_module, "_bulkhead", None)
+    bulkhead = bulkhead_module.get_bulkhead(proxy_http_limit=0, proxy_websocket_limit=1, dashboard_limit=1)
+    lane_name, sem = bulkhead.get_semaphore("http", "/v1/responses/compact")
+    assert lane_name == "proxy_compact"
+    assert sem is None
 
 
 @pytest.mark.asyncio

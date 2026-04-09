@@ -183,7 +183,7 @@ def get_bulkhead(
     *,
     proxy_http_limit: int = 200,
     proxy_websocket_limit: int = 200,
-    proxy_compact_limit: int = 16,
+    proxy_compact_limit: int | None = None,
     dashboard_limit: int = 50,
 ) -> BulkheadSemaphore:
     global _bulkhead

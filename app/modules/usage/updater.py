@@ -155,6 +155,9 @@ class _UsageRefreshSingleflight:
         if current is task:
             self._inflight.pop(account_id, None)
 
+    def clear(self) -> None:
+        self._inflight.clear()
+
 
 _USAGE_REFRESH_SINGLEFLIGHT = _UsageRefreshSingleflight()
 
@@ -732,3 +735,4 @@ def _prune_usage_refresh_auth_cooldowns() -> None:
 def _clear_usage_refresh_state() -> None:
     _usage_refresh_auth_cooldowns.clear()
     _last_successful_refresh.clear()
+    _USAGE_REFRESH_SINGLEFLIGHT.clear()

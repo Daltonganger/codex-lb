@@ -365,7 +365,7 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def _normalize_bulkhead_proxy_lane_limits(self) -> "Settings":
+    def _normalize_bulkhead_limits(self) -> "Settings":
         if self.bulkhead_proxy_http_limit is None:
             self.bulkhead_proxy_http_limit = self.bulkhead_proxy_limit
         if self.bulkhead_proxy_websocket_limit is None:
