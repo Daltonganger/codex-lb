@@ -330,10 +330,9 @@ async def test_refresh_account_does_not_deactivate_when_repo_has_newer_refresh_t
     repo.accounts_by_id[stale_account.id] = latest_account
     manager = AuthManager(cast(AccountsRepositoryPort, repo))
 
-    with pytest.raises(RefreshError) as exc_info:
-        await manager.refresh_account(stale_account)
+    result = await manager.refresh_account(stale_account)
 
-    assert exc_info.value.is_permanent is False
+    assert result is latest_account
     assert repo.status_payload is None
     assert stale_account.status == AccountStatus.ACTIVE
 

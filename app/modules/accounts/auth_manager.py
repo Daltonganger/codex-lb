@@ -75,7 +75,9 @@ class _RefreshSingleflight:
                     raise RefreshError(code, message, is_permanent)
                 self._recent_failures.pop(key, None)
             task = self._inflight.get(key)
-            if task is None or (task.done() and (task.cancelled() or task.exception() is not None)):
+            if task is not None and task.done() and not task.cancelled() and task.exception() is None:
+                pass
+            elif task is None or task.done():
                 task = asyncio.create_task(factory())
                 self._inflight[key] = task
                 task.add_done_callback(lambda done, *, cache_key=key: self._schedule_complete(cache_key, done))
@@ -158,7 +160,7 @@ class AuthManager:
                     latest.refresh_token_encrypted,
                     account.refresh_token_encrypted,
                 ):
-                    raise RefreshError(exc.code, exc.message, False) from exc
+                    return latest
                 reason = PERMANENT_FAILURE_CODES.get(exc.code, exc.message)
                 await self._repo.update_status(account.id, AccountStatus.DEACTIVATED, reason)
                 account.status = AccountStatus.DEACTIVATED
