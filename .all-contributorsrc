@@ -338,6 +338,16 @@
         "code",
         "test"
       ]
+    },
+    {
+      "login": "ihazgithub",
+      "name": "Thomas Haslam",
+      "avatar_url": "https://avatars.githubusercontent.com/u/129220128?v=4",
+      "profile": "https://github.com/ihazgithub",
+      "contributions": [
+        "code",
+        "test"
+      ]
     }
   ],
   "contributorsPerLine": 7,
